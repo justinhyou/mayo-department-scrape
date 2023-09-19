@@ -3,39 +3,48 @@ from bs4 import BeautifulSoup
 
 import argparse
 
+from datetime import datetime
+
+
 parser = argparse.ArgumentParser(
     description="Just an example",
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument(
     '-s',
     '--start',
-    type=lambda d: datetime.datetime.strptime(d, '%Y-%m-%d').date(),
+    type=lambda d: datetime.strptime(d, '%Y-%m-%d'),
     help='Set a start date')
 parser.add_argument(
     '-e',
     '--end',
-    type=lambda d: datetime.datetime.strptime(d, '%Y-%m-%d').date(),
+    type=lambda d: datetime.strptime(d, '%Y-%m-%d'),
     help='Set a start date')
 args = parser.parse_args()
 config = vars(args)
 start_date = config['start']
+if not start_date:
+    start_date = datetime.min
 end_date = config['end']
+if not end_date:
+    end_date = datetime.max
 # assert end_date > start_date
 print("Looking between", start_date, "and", end_date)
 # todo handle for both epub or print date within range
 
-special_profiles = [
-    "https://www.mayoclinic.org/biographies/parney-ian-f-m-d-ph-d/bio-20055129",
-    "https://www.mayoclinic.org/biographies/lanzino-giuseppe-m-d/bio-20055067",
-    "https://www.mayoclinic.org/biographies/lee-kendall-h-m-d-ph-d/bio-20054858",
-    "https://www.mayoclinic.org/biographies/miller-david-a-m-d/bio-20053775"
-]
+# special_profiles = [
+#     "https://www.mayoclinic.org/biographies/parney-ian-f-m-d-ph-d/bio-20055129",
+#     "https://www.mayoclinic.org/biographies/lanzino-giuseppe-m-d/bio-20055067",
+#     "https://www.mayoclinic.org/biographies/lee-kendall-h-m-d-ph-d/bio-20054858",
+#     "https://www.mayoclinic.org/biographies/miller-david-a-m-d/bio-20053775"
+# ]
+
+use_only_pub_med = True
 
 base_url = "https://www.mayoclinic.org"
 remainder = "/departments-centers/neurosurgery/sections/doctors/drc-20117103"
 suffix = "?page="
 
-pub_med_base = "https://pubmed.ncbi.nlm.nih.gov/"
+pub_med_base = "https://pubmed.ncbi.nlm.nih.gov"
 ncbi_base = "www.ncbi.nlm.nih.gov"
 
 URL = base_url + remainder + suffix
@@ -59,12 +68,18 @@ class PageType(Enum):
     NCBI_BIBLIOGRPAHY = 2
     PUB_MED_BASE = 3
 
+
+import csv
+
+
 def main():
     options = Options()
     options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=options)
 
     doctor_to_profile_link = dict()
+
+    doctor_names = []
 
     for i in range(num_pages):
         page_num = i + 1
@@ -81,41 +96,59 @@ def main():
             link = result_item.find('a')
             if link:
                 doctor_to_profile_link[link.string] = link.get("href")
+                doctor_names.append(link.get_text().strip())
             else:
                 continue
 
-    assert len(doctor_to_profile_link.keys()) == total_num_docs
-
+    assert len(doctor_names) == total_num_docs
 
     doctor_to_pub_link = dict()
     # for each profile_link, go to publications to extract link
 
     all_research = []
-
-    for doctor in doctor_to_profile_link.keys():
-        profile_link = base_url + doctor_to_profile_link[doctor]
-        if profile_link in special_profiles:
-            continue
-        driver.get(profile_link)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        link_element = soup.find("a", string="See my publications")
-        link = link_element.get("href")
-        doctor_to_pub_link[doctor] = link
-        page_type = None
-        if base_url in link:
-            page_type = PageType.MAYO_PUBS
-        elif ncbi_base in link and "bibliography" in link:
-            page_type = PageType.NCBI_BIBLIOGRPAHY
-        elif pub_med_base in link or ncbi_base in link:
-            page_type = PageType.PUB_MED_BASE
-        research = processor(link, driver, page_type)
-        all_research.extend(research)
+    if use_only_pub_med:
+        for name in doctor_names:
+            research = process_pub_med(name)
+            all_research.extend(research)
+    else:
+        for doctor in doctor_to_profile_link.keys():
+            profile_link = base_url + doctor_to_profile_link[doctor]
+            # if profile_link in special_profiles:
+            #     continue
+            driver.get(profile_link)
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            link_element = soup.find("a", string="See my publications")
+            link = link_element.get("href")
+            doctor_to_pub_link[doctor] = link
+            page_type = None
+            if base_url in link:
+                page_type = PageType.MAYO_PUBS
+            elif ncbi_base in link and "bibliography" in link:
+                page_type = PageType.NCBI_BIBLIOGRPAHY
+            elif pub_med_base in link or ncbi_base in link:
+                page_type = PageType.PUB_MED_BASE
+            research = processor(link, driver, page_type)
+            all_research.extend(research)
 
     driver.quit()
 
-    # for research in all_research:
-    #     print(research)
+    csv_path = "example_output.csv"
 
+    with open(csv_path, "w") as opened:
+        writer = csv.writer(opened)
+        writer.writerow(["title", "authors", "pub_info", "link"])
+        for research in all_research:
+            title, paper_link, authors, pub_info = research
+            writer.writerow([title, authors, pub_info, paper_link])
+
+def process_pub_med(title):
+    name = title.split(",")[0]
+    split_name = name.split(" ")
+    html_name = f"{split_name[-1]}%2C%20{split_name[0]}"
+    params = f"/?term={html_name}+mayo&sort=date"
+    url = pub_med_base + params
+    research = process_pub_med_pubs(url)
+    return research
 
 def processor(link, driver, page_type):
     if page_type == PageType.MAYO_PUBS:
@@ -146,11 +179,12 @@ def process_ncbi_bibliography(link, driver): #handle multiple pages?
             continue
         authors = regex_output.group(1)
         title = regex_output.group(2)
-        link_div = citation.get("a")
-        print(link_div)
+        link_div = citation.find("a")
         if not link_div:
+            print("Could not find link:", citation)
             continue
-        paper_link = link_div.get("href")
+        paper_link = pub_med_base + link_div.get("href")
+        print(paper_link)
         pub_info = regex_output.group(3)
         research.append((title, paper_link, authors, pub_info))
 
@@ -185,15 +219,18 @@ def process_mayo_pubs(link, driver):
 
     return research
 
+date_pattern = re.compile(" (20.*?)[;|.|:]")
+
 def process_pub_med_pubs(link): # todo : handle multiple pages, use driver?
     page = requests.get(link + "&sort=date")
     soup = BeautifulSoup(page.content, "html.parser")
 
     research = []
-    pubs = soup.find("div", class_="search-results-chunks")
+    pubs = soup.find("div", class_="search-results-chunk")
     if not pubs:
         print("Invalid pub link:", link)
         return []
+
     research_articles = pubs.find_all("article", class_="full-docsum")
 
     for research_article in research_articles:
@@ -204,6 +241,41 @@ def process_pub_med_pubs(link): # todo : handle multiple pages, use driver?
         citation_section = research_content.find("div", class_="docsum-citation")
         authors = citation_section.find("span", class_="docsum-authors").get_text().strip()
         citation = citation_section.find("span", class_="docsum-journal-citation").get_text().strip()
+
+        regex_output = date_pattern.findall(citation)
+        if not regex_output:
+            print("Couldn't find date for", citation)
+            continue
+
+        dates = []
+        for date_string in regex_output:
+            try:
+                dates.append(datetime.strptime(date_string, "%Y %b %d"))
+            except ValueError:
+                try:
+                    dates.append(datetime.strptime(date_string, "%Y %b"))
+                except ValueError:
+                    continue
+
+        if not dates:
+            print("Could not parse date for", link)
+
+        within_dates = False
+        for date in dates:
+            if start_date <= date <= end_date:
+                within_dates = True
+
+        all_dates_older = True
+        for date in dates:
+            if date >= start_date:
+                all_dates_older = False
+
+        if all_dates_older: # since starting from newest, terminate once older
+            break
+
+        if not within_dates:
+            continue
+
         research.append((title, link, authors, citation))
 
     return research
@@ -212,14 +284,21 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 def developing():
-    options = Options()
-    options.add_argument("--headless=new")
-    driver = webdriver.Chrome(options=options)
+    # options = Options()
+    # options.add_argument("--headless=new")
+    # driver = webdriver.Chrome(options=options)
+    #
+    # link = "https://www.ncbi.nlm.nih.gov/myncbi/1j1Pm-qk6urAm/bibliography/public/"
+    # result = process_ncbi_bibliography(link, driver)
+    # print(result)
 
-    link = "https://www.ncbi.nlm.nih.gov/myncbi/1j1Pm-qk6urAm/bibliography/public/"
-    result = process_ncbi_bibliography(link, driver)
-    print(result)
+    # matching = date_pattern.findall("J Neurosurg Spine. 2022 Jun 3:1-9. doi: 10.3171/2022.4.SPINE22133. Online ahead of print. pine. 2022 Jun 3:1-9. doi: 10.3171/")
+    # print(matching)
+
+    research = process_pub_med("Kendall H. Lee, M.D., Ph.D.")
+    for article in research:
+        print(article)
 
 if __name__ == '__main__':
-    # main()
-    developing()
+    main()
+    # developing()

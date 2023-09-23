@@ -102,13 +102,21 @@ def main():
 
     assert len(doctor_names) == total_num_docs
 
+    csv_path = "doctors.csv"
+
+    with open(csv_path, "w") as opened:
+        writer = csv.writer(opened)
+        writer.writerow(["name"])
+        for doctor in doctor_names:
+            writer.writerow([doctor])
+
     doctor_to_pub_link = dict()
     # for each profile_link, go to publications to extract link
 
     all_research = []
     if use_only_pub_med:
         for name in doctor_names:
-            research = process_pub_med(name)
+            research = process_pub_med(name, driver)
             all_research.extend(research)
     else:
         for doctor in doctor_to_profile_link.keys():
@@ -132,22 +140,46 @@ def main():
 
     driver.quit()
 
+
+    # remove duplicates
+    duplicates_removed = []
+    paper_links = set()
+    for research in all_research:
+        if research[1] in paper_links:
+            continue
+        paper_links.add(research[1])
+        duplicates_removed.append(research)
+
     csv_path = "example_output.csv"
 
     with open(csv_path, "w") as opened:
         writer = csv.writer(opened)
         writer.writerow(["title", "authors", "pub_info", "link"])
-        for research in all_research:
+        for research in duplicates_removed:
             title, paper_link, authors, pub_info = research
             writer.writerow([title, authors, pub_info, paper_link])
 
-def process_pub_med(title):
+def process_pub_med(title, driver):
     name = title.split(",")[0]
     split_name = name.split(" ")
-    html_name = f"{split_name[-1]}%2C%20{split_name[0]}"
+    for split in split_name:
+        if "(" in split:
+            split_name.remove(split)
+    if len(split_name) == 2 or (len(split_name) == 3 and "." in name):
+        html_name = f"{split_name[-1]}%2C%20{split_name[0]}"
+    else:
+        ind_initial = -1
+        for i, split in enumerate(split_name):
+            if "." in split:
+                ind_initial = i
+        if ind_initial == 1:
+            html_name = f"{split_name[-2]}+{split_name[-1]}%2C%20{split_name[0]}"
+        else:
+            html_name = f"{split_name[-1]}%2C%20{split_name[0]}+{split_name[1]}"
+
     params = f"/?term={html_name}+mayo&sort=date"
     url = pub_med_base + params
-    research = process_pub_med_pubs(url)
+    research = process_pub_med_pubs(url, driver)
     return research
 
 def processor(link, driver, page_type):
@@ -156,7 +188,7 @@ def processor(link, driver, page_type):
     elif page_type == PageType.NCBI_BIBLIOGRPAHY:
         return process_ncbi_bibliography(link, driver)
     elif page_type == PageType.PUB_MED_BASE:
-        return process_pub_med_pubs(link)
+        return process_pub_med_pubs(link, driver)
     else:
         raise Exception("No processor for url:", link)
 
@@ -221,18 +253,24 @@ def process_mayo_pubs(link, driver):
 
 date_pattern = re.compile(" (20.*?)[;|.|:]")
 
-def process_pub_med_pubs(link): # todo : handle multiple pages, use driver?
-    page = requests.get(link + "&sort=date")
-    soup = BeautifulSoup(page.content, "html.parser")
+def process_pub_med_pubs(query_link, driver, pageNum = 1):
+    new_url = query_link + "&sort=date&page=" + str(pageNum)
+    # print(new_url)
+    driver.get(new_url)
+    soup = BeautifulSoup(driver.page_source, "html.parser")
 
     research = []
     pubs = soup.find("div", class_="search-results-chunk")
     if not pubs:
-        print("Invalid pub link:", link)
+        print("Invalid pub link:", new_url)
         return []
 
     research_articles = pubs.find_all("article", class_="full-docsum")
 
+    # allow_some_flexibility because date ranking is weird
+    flex_over = 0
+
+    all_dates_older = True
     for research_article in research_articles:
         research_content = research_article.find("div", class_="docsum-content")
         title_and_link = research_content.find("a")
@@ -255,6 +293,16 @@ def process_pub_med_pubs(link): # todo : handle multiple pages, use driver?
                 try:
                     dates.append(datetime.strptime(date_string, "%Y %b"))
                 except ValueError:
+                    try:
+                        if "-" in date_string:
+                            split_date = date_string.split(" ")
+                            year = split_date[0]
+                            dates.append(datetime.strptime(year + " " + split_date[1].split("-")[0], "%Y %b"))
+                            dates.append(datetime.strptime(year + " " + split_date[1].split("-")[1], "%Y %b"))
+                        else:
+                            print("Couldn't parse date from", date_string)
+                    except ValueError:
+                        print("Couldn't parse date from", date_string)
                     continue
 
         if not dates:
@@ -265,18 +313,23 @@ def process_pub_med_pubs(link): # todo : handle multiple pages, use driver?
             if start_date <= date <= end_date:
                 within_dates = True
 
-        all_dates_older = True
         for date in dates:
             if date >= start_date:
                 all_dates_older = False
 
         if all_dates_older: # since starting from newest, terminate once older
-            break
+            flex_over += 1
+            if flex_over > 2:
+                break
+            continue
 
         if not within_dates:
             continue
 
         research.append((title, link, authors, citation))
+
+    if not all_dates_older:
+        research.extend(process_pub_med_pubs(query_link, driver, pageNum=pageNum + 1))
 
     return research
 
@@ -284,9 +337,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
 def developing():
-    # options = Options()
-    # options.add_argument("--headless=new")
-    # driver = webdriver.Chrome(options=options)
+    options = Options()
+    options.add_argument("--headless=new")
+    driver = webdriver.Chrome(options=options)
     #
     # link = "https://www.ncbi.nlm.nih.gov/myncbi/1j1Pm-qk6urAm/bibliography/public/"
     # result = process_ncbi_bibliography(link, driver)
@@ -295,7 +348,7 @@ def developing():
     # matching = date_pattern.findall("J Neurosurg Spine. 2022 Jun 3:1-9. doi: 10.3171/2022.4.SPINE22133. Online ahead of print. pine. 2022 Jun 3:1-9. doi: 10.3171/")
     # print(matching)
 
-    research = process_pub_med("Kendall H. Lee, M.D., Ph.D.")
+    research = process_pub_med("Mark K. Lyons, M.D.", driver)
     for article in research:
         print(article)
 

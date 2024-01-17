@@ -1,6 +1,13 @@
-import requests
 from bs4 import BeautifulSoup
-
+import re
+from enum import Enum
+import csv
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 import argparse
 
 from datetime import datetime
@@ -52,16 +59,11 @@ URL = base_url + remainder + suffix
 # go through each page of the doctor list
 num_pages = 6  # todo, scrape this from search result
 
-total_num_docs = 53  # todo, scrape this from search result
-
-
-import re
+total_num_docs = 54  # todo, scrape this from search result
 
 
 pattern = re.compile("(.*?\.) (.*?(\.|\?)) (.*)")
 
-
-from enum import Enum
 
 class PageType(Enum):
     MAYO_PUBS = 1
@@ -69,12 +71,9 @@ class PageType(Enum):
     PUB_MED_BASE = 3
 
 
-import csv
-
-
 def main():
     options = Options()
-    options.add_argument("--headless=new")
+    # options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=options)
 
     doctor_to_profile_link = dict()
@@ -152,12 +151,13 @@ def main():
 
     csv_path = "example_output.csv"
 
-    with open(csv_path, "w") as opened:
+    with open(csv_path, "w", encoding='utf-8') as opened:
         writer = csv.writer(opened)
         writer.writerow(["title", "authors", "pub_info", "link"])
         for research in duplicates_removed:
             title, paper_link, authors, pub_info = research
             writer.writerow([title, authors, pub_info, paper_link])
+
 
 def process_pub_med(title, driver):
     name = title.split(",")[0]
@@ -216,9 +216,8 @@ def process_ncbi_bibliography(link, driver): #handle multiple pages?
             print("Could not find link:", citation)
             continue
         paper_link = pub_med_base + link_div.get("href")
-        print(paper_link)
         pub_info = regex_output.group(3)
-        research.append((title, paper_link, authors, pub_info))
+        research.append((title, paper_link.strip(), authors, pub_info))
 
     return research
 
@@ -251,16 +250,27 @@ def process_mayo_pubs(link, driver):
 
     return research
 
-date_pattern = re.compile(" (20.*?)[;|.|:]")
+
+date_pattern = re.compile(" (20.*?)[;|.|:]") # todo allow for any year
+
 
 def process_pub_med_pubs(query_link, driver, pageNum = 1):
     new_url = query_link + "&sort=date&page=" + str(pageNum)
     # print(new_url)
     driver.get(new_url)
+    # delay = 30
+    # try:
+    #     search_results_chunk = WebDriverWait(driver, delay).until(EC.presence_of_element_located((By.CLASS_NAME, "search-results-chunk")))
+    # except TimeoutException:
+    #     print("exception")
+
     soup = BeautifulSoup(driver.page_source, "html.parser")
+    # with open("temp.txt", "a") as file:
+    #     file.write(driver.page_source)
 
     research = []
-    pubs = soup.find("div", class_="search-results-chunk")
+    # pubs = soup.find("div", class_="search-results-chunk")
+    pubs = soup.select_one("div.search-results-chunk.results-chunk")
     if not pubs:
         print("Invalid pub link:", new_url)
         return []
@@ -317,7 +327,7 @@ def process_pub_med_pubs(query_link, driver, pageNum = 1):
             if date >= start_date:
                 all_dates_older = False
 
-        if all_dates_older: # since starting from newest, terminate once older
+        if all_dates_older:  # since starting from newest, terminate once older
             flex_over += 1
             if flex_over > 2:
                 break
@@ -329,17 +339,25 @@ def process_pub_med_pubs(query_link, driver, pageNum = 1):
         research.append((title, link, authors, citation))
 
     if not all_dates_older:
-        research.extend(process_pub_med_pubs(query_link, driver, pageNum=pageNum + 1))
+        research.extend(process_pub_med_pubs(query_link, driver, pageNum=pageNum + 1)) # check max page num
 
     return research
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 
 def developing():
     options = Options()
     options.add_argument("--headless=new")
+    # options.add_argument('--disable-blink-features=AutomationControlled')
+    # options.add_argument("--disable-extensions")
+    # options.add_experimental_option('useAutomationExtension', False)
+    # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    # options.add_argument('--disable-extensions')
+    # options.add_argument('--profile-directory=Default')
+    # options.add_argument("--incognito")
+    # options.add_argument("--disable-plugins-discovery")
+    # options.add_argument("--start-maximized")
     driver = webdriver.Chrome(options=options)
+    # driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     #
     # link = "https://www.ncbi.nlm.nih.gov/myncbi/1j1Pm-qk6urAm/bibliography/public/"
     # result = process_ncbi_bibliography(link, driver)
@@ -351,6 +369,7 @@ def developing():
     research = process_pub_med("Mark K. Lyons, M.D.", driver)
     for article in research:
         print(article)
+
 
 if __name__ == '__main__':
     main()

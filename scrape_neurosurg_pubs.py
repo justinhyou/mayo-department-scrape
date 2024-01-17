@@ -371,6 +371,56 @@ def developing():
         print(article)
 
 
+def test_generalization():
+    options = Options()
+    options.add_argument("--headless=new")
+    driver = webdriver.Chrome(options=options)
+
+    mayo_depts = "https://www.mayoclinic.org/departments-centers"
+    driver.get(mayo_depts)
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+
+    # find the result items div
+    departments_content = soup.find("div", class_="content-within")
+
+    dept_urls_elements = departments_content.find_all("a")
+
+    dept_urls = [dept_urls_element.get("href") for dept_urls_element in dept_urls_elements]
+
+    dept_urls_with_doctors_link = []
+    for dept_url in dept_urls:
+        if not "genomics" in dept_url: # todo handle alternative pages
+            continue
+        if not len(dept_url.strip()):
+            continue
+        qualified_url = mayo_depts + dept_url
+        driver.get(qualified_url)
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        print("Doctors" in soup.text)
+        nav_bar = soup.find("div", id="access-nav")
+        if not nav_bar:
+            print(dept_url, "has no nav bar") # todo handle alternative pages
+            continue
+        nav_items = nav_bar.find_all("li")
+
+        if len(nav_items) == 0:
+            print(dept_url, "error")
+            return
+
+        for nav_item in nav_items:
+            if "Doctors" == nav_item.text:
+                dept_urls_with_doctors_link.append("https://www.mayoclinic.org" + nav_item.find("a").get("href"))
+                break
+
+    return dept_urls_with_doctors_link
+
+
+evaluate_all_departments = False
+evaluate_specific_department = "Neurosurgery"
+
+
 if __name__ == '__main__':
-    main()
+    # main()
     # developing()
+    all_dept_urls = test_generalization()
+    print(all_dept_urls)

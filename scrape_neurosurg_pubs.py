@@ -59,7 +59,7 @@ URL = base_url + remainder + suffix
 # go through each page of the doctor list
 num_pages = 6  # todo, scrape this from search result
 
-total_num_docs = 54  # todo, scrape this from search result
+total_num_docs = 56  # todo, scrape this from search result
 
 
 pattern = re.compile("(.*?\.) (.*?(\.|\?)) (.*)")
@@ -103,10 +103,32 @@ def main():
 
     csv_path = "doctors.csv"
 
+    invalid_group = [
+        "Perry S.Bechtle, Jr.",
+        "David A.Miller",
+        "Maciej M.Mrugala",
+        "Stephen M.Pirris",
+        "Misha L.Pless",
+        "Susan L.Samson",
+        "Wendy J.Sherman",
+        "Alexander Y.Shin",
+        "Kristin R.Swanson",
+        "Peter A.Weisskopf",
+        "William D.Freeman",
+        "Thien Huynh",
+    ]
+
     with open(csv_path, "w") as opened:
         writer = csv.writer(opened)
         writer.writerow(["name"])
         for doctor in doctor_names:
+            invalid = False
+            for invalid_doctor in invalid_group:
+                if invalid_doctor in doctor:
+                    invalid = True
+                    break
+            if invalid:
+                continue
             writer.writerow([doctor])
 
     doctor_to_pub_link = dict()
@@ -138,7 +160,6 @@ def main():
             all_research.extend(research)
 
     driver.quit()
-
 
     # remove duplicates
     duplicates_removed = []
@@ -181,6 +202,7 @@ def process_pub_med(title, driver):
     url = pub_med_base + params
     research = process_pub_med_pubs(url, driver)
     return research
+
 
 def processor(link, driver, page_type):
     if page_type == PageType.MAYO_PUBS:
@@ -371,7 +393,7 @@ def developing():
         print(article)
 
 
-def test_generalization():
+def get_dept_doctors_urls():
     options = Options()
     options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=options)
@@ -385,21 +407,23 @@ def test_generalization():
 
     dept_urls_elements = departments_content.find_all("a")
 
-    dept_urls = [dept_urls_element.get("href") for dept_urls_element in dept_urls_elements]
+    dept_urls = [(dept_urls_element.get("href"), dept_urls_element.text) for dept_urls_element in dept_urls_elements]
 
-    dept_urls_with_doctors_link = []
-    for dept_url in dept_urls:
-        if not "genomics" in dept_url: # todo handle alternative pages
-            continue
+    dept_urls_with_doctors_link = dict()
+    for department, dept_url in dept_urls:
+        # temporary
+        # if "genomics" not in dept_url:  # todo handle alternative pages
+        #     continue
+
         if not len(dept_url.strip()):
             continue
-        qualified_url = mayo_depts + dept_url
+
+        qualified_url = base_url + dept_url
         driver.get(qualified_url)
         soup = BeautifulSoup(driver.page_source, "html.parser")
-        print("Doctors" in soup.text)
         nav_bar = soup.find("div", id="access-nav")
         if not nav_bar:
-            print(dept_url, "has no nav bar") # todo handle alternative pages
+            print(qualified_url, "has no nav bar")
             continue
         nav_items = nav_bar.find_all("li")
 
@@ -407,10 +431,15 @@ def test_generalization():
             print(dept_url, "error")
             return
 
+        found_doctors_nav_item = False
         for nav_item in nav_items:
             if "Doctors" == nav_item.text:
-                dept_urls_with_doctors_link.append("https://www.mayoclinic.org" + nav_item.find("a").get("href"))
+                dept_urls_with_doctors_link[department] = "https://www.mayoclinic.org" + nav_item.find("a").get("href")
+                found_doctors_nav_item = True
                 break
+
+        if not found_doctors_nav_item:
+            print(qualified_url, "has no doctor sub nav")
 
     return dept_urls_with_doctors_link
 
@@ -419,8 +448,44 @@ evaluate_all_departments = False
 evaluate_specific_department = "Neurosurgery"
 
 
+def process_department(department, department_url):
+    return
+
+
 if __name__ == '__main__':
-    # main()
+    main()
     # developing()
-    all_dept_urls = test_generalization()
-    print(all_dept_urls)
+    # dept_urls_with_doctors_link = get_dept_doctors_urls()
+    if not evaluate_all_departments:
+        # dept_url = "https://www.mayoclinic.org/departments-centers/neurosurgery/sections/doctors/drc-20117103"
+        process_department(evaluate_specific_department, dept_urls_with_doctors_link[evaluate_specific_department])
+        # process_department(evaluate_specific_department, dept_url)
+    else:
+        for department, dept_url in dept_urls_with_doctors_link.items():
+            process_department(department, dept_url)
+
+
+"""
+exceptions:
+https://www.mayoclinic.org/departments-centers/hospital-at-home/sections/overview/ovc-20551797 has no doctor sub nav
+https://www.mayoclinic.org/departments-centers/cardiovascular-medicine-florida/overview/ovc-20557804 florida link
+https://www.mayoclinic.org/departments-centers/cardiovascular-medicine-arizona/overview/ovc-20554275 arizona link
+https://www.mayoclinic.org/departments-centers/cardiovascular-medicine-minnesota/overview/ovc-20557837 minnesota link
+https://www.mayoclinic.org/departments-centers/rochester-center-aesthetic-medicine-surgery-mayo-clinic/sections/overview/ovc-20519193 more dropdown
+https://www.mayoclinic.org/departments-centers/personalized-individualized-medicine about faculty
+https://www.mayoclinic.org/departments-centers/mayo-clinic-cancer-center Find a doctor links
+https://www.mayoclinic.org/departments-centers/mayo-clinic-executive-health-program/home/orc-20252811 in drop down
+https://www.mayoclinic.org/departments-centers/family-medicine/sections/overview/ovc-20458326 individual location links
+https://www.mayoclinic.org/departments-centers/gastroenterology-hepatology-digestive-care-florida/overview/ovc-20560106 View gastroenterologists and hepatologists
+https://www.mayoclinic.org/departments-centers/gastroenterology-hepatology-digestive-care-minnesota/overview/ovc-20560107 View gastroenterologists and hepatologists
+https://www.mayoclinic.org/departments-centers/gastroenterology-hepatology-digestive-care-arizona/overview/ovc-20559150 View gastroenterologists and hepatologists
+https://www.mayoclinic.org/departments-centers/general-surgery/arizona has different doctor sub nav
+https://www.mayoclinic.org/departments-centers/gynecology-florida/overview/ovc-20559450 View gynecologists 
+https://www.mayoclinic.org/departments-centers/gynecology-arizona/overview/ovc-20559449 View gynecologists 
+https://www.mayoclinic.org/departments-centers/occupational-medicine/sections/overview/ovc-20458998 within "more" dropdown
+https://www.mayoclinic.org/departments-centers/pharmacogenomics has alternative page
+https://www.mayoclinic.org/departments-centers/psychiatry-psychology has alternative page.
+https://www.mayoclinic.org/departments-centers/regenerative-medicine has alternative page..
+https://www.mayoclinic.org/departments-centers/sports-medicine-mayo-clinic/sections/overview/ovc-20437758 within "more" dropdown
+https://www.mayoclinic.org/departments-centers/sports-medicine/minnesota has alternative page...
+"""

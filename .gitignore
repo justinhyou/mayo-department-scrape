@@ -5,6 +5,10 @@ __pycache__/
 out.txt
 temp.txt
 .idea/
+*.docx
+*.xls
+*.xlsx
+*.csv
 
 # C extensions
 *.so

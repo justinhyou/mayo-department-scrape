@@ -6,11 +6,12 @@ from docx.shared import RGBColor
 
 input_csv = os.path.join(os.getcwd(), "input.csv")
 
-possible_labels = ["Br", "Sp", "Peri", "Peds", "Other"]
+possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other"]
 
 
 def screen(categories):
     unlabeled = set(categories)
+    print(unlabeled)
     for label in possible_labels:
         unlabeled.remove(label)
 

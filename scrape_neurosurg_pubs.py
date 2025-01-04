@@ -67,7 +67,7 @@ pattern = re.compile("(.*?\.) (.*?(\.|\?)) (.*)")
 
 class PageType(Enum):
     MAYO_PUBS = 1
-    NCBI_BIBLIOGRPAHY = 2
+    NCBI_BIBLIOGRAPHY = 2
     PUB_MED_BASE = 3
 
 
@@ -95,40 +95,18 @@ def main():
             link = result_item.find('a')
             if link:
                 doctor_to_profile_link[link.string] = link.get("href")
-                doctor_names.append(link.get_text().strip())
+                specialty = result_item.find('ol').find('li').text
+                if "Neurosurgeon" in specialty:
+                    doctor_names.append(link.get_text().strip())
             else:
                 continue
 
-    assert len(doctor_names) == total_num_docs
-
     csv_path = "doctors.csv"
-
-    invalid_group = [
-        "Perry S.Bechtle, Jr.",
-        "David A.Miller",
-        "Maciej M.Mrugala",
-        "Stephen M.Pirris",
-        "Misha L.Pless",
-        "Susan L.Samson",
-        "Wendy J.Sherman",
-        "Alexander Y.Shin",
-        "Kristin R.Swanson",
-        "Peter A.Weisskopf",
-        "William D.Freeman",
-        "Thien Huynh",
-    ]
 
     with open(csv_path, "w") as opened:
         writer = csv.writer(opened)
         writer.writerow(["name"])
         for doctor in doctor_names:
-            invalid = False
-            for invalid_doctor in invalid_group:
-                if invalid_doctor in doctor:
-                    invalid = True
-                    break
-            if invalid:
-                continue
             writer.writerow([doctor])
 
     doctor_to_pub_link = dict()
@@ -153,7 +131,7 @@ def main():
             if base_url in link:
                 page_type = PageType.MAYO_PUBS
             elif ncbi_base in link and "bibliography" in link:
-                page_type = PageType.NCBI_BIBLIOGRPAHY
+                page_type = PageType.NCBI_BIBLIOGRAPHY
             elif pub_med_base in link or ncbi_base in link:
                 page_type = PageType.PUB_MED_BASE
             research = processor(link, driver, page_type)
@@ -207,16 +185,15 @@ def process_pub_med(title, driver):
 def processor(link, driver, page_type):
     if page_type == PageType.MAYO_PUBS:
         return process_mayo_pubs(link, driver)
-    elif page_type == PageType.NCBI_BIBLIOGRPAHY:
+    elif page_type == PageType.NCBI_BIBLIOGRAPHY:
         return process_ncbi_bibliography(link, driver)
     elif page_type == PageType.PUB_MED_BASE:
         return process_pub_med_pubs(link, driver)
     else:
         raise Exception("No processor for url:", link)
 
-CLEANR = re.compile('<.*?>')
 
-def process_ncbi_bibliography(link, driver): #handle multiple pages?
+def process_ncbi_bibliography(link, driver):  # handle multiple pages?
 
     driver.get(link)
     soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -273,11 +250,11 @@ def process_mayo_pubs(link, driver):
     return research
 
 
-date_pattern = re.compile(" (20.*?)[;|.|:]") # todo allow for any year
+date_pattern = re.compile(" (20.*?)[;|.|:]")  # todo allow for any year
 
 
-def process_pub_med_pubs(query_link, driver, pageNum = 1):
-    new_url = query_link + "&sort=date&page=" + str(pageNum)
+def process_pub_med_pubs(query_link, driver, page_num=1):
+    new_url = query_link + "&sort=date&page=" + str(page_num)
     # print(new_url)
     driver.get(new_url)
     # delay = 30
@@ -361,12 +338,14 @@ def process_pub_med_pubs(query_link, driver, pageNum = 1):
         research.append((title, link, authors, citation))
 
     if not all_dates_older:
-        research.extend(process_pub_med_pubs(query_link, driver, pageNum=pageNum + 1)) # check max page num
+        research.extend(process_pub_med_pubs(query_link, driver, page_num=page_num + 1))  # check max page num
 
     return research
 
 
 def developing():
+    get_dept_doctors_urls()
+
     options = Options()
     options.add_argument("--headless=new")
     # options.add_argument('--disable-blink-features=AutomationControlled')
@@ -398,8 +377,8 @@ def get_dept_doctors_urls():
     options.add_argument("--headless=new")
     driver = webdriver.Chrome(options=options)
 
-    mayo_depts = "https://www.mayoclinic.org/departments-centers"
-    driver.get(mayo_depts)
+    mayo_departments = "https://www.mayoclinic.org/departments-centers"
+    driver.get(mayo_departments)
     soup = BeautifulSoup(driver.page_source, "html.parser")
 
     # find the result items div
@@ -454,15 +433,16 @@ def process_department(department, department_url):
 
 if __name__ == '__main__':
     main()
+
     # developing()
     # dept_urls_with_doctors_link = get_dept_doctors_urls()
-    if not evaluate_all_departments:
-        # dept_url = "https://www.mayoclinic.org/departments-centers/neurosurgery/sections/doctors/drc-20117103"
-        process_department(evaluate_specific_department, dept_urls_with_doctors_link[evaluate_specific_department])
-        # process_department(evaluate_specific_department, dept_url)
-    else:
-        for department, dept_url in dept_urls_with_doctors_link.items():
-            process_department(department, dept_url)
+    # if not evaluate_all_departments:
+    #     # dept_url = "https://www.mayoclinic.org/departments-centers/neurosurgery/sections/doctors/drc-20117103"
+    #     process_department(evaluate_specific_department, dept_urls_with_doctors_link[evaluate_specific_department])
+    #     # process_department(evaluate_specific_department, dept_url)
+    # else:
+    #     for department, dept_url in dept_urls_with_doctors_link.items():
+    #         process_department(department, dept_url)
 
 
 """

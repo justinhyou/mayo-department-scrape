@@ -6,7 +6,7 @@ from docx.shared import RGBColor
 
 input_csv = os.path.join(os.getcwd(), "input.csv")
 
-possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other"]
+possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other", "Skip"]
 
 
 def screen(categories):
@@ -40,6 +40,8 @@ def main():
     doc = docx.Document()
 
     for category in regrouped.keys():
+        if category == "Skip":
+            continue
         categorical = regrouped[category]
         p = doc.add_paragraph()
         run = p.add_run(category)

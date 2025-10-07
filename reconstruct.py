@@ -11,9 +11,10 @@ possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other", "Skip"]
 
 def screen(categories):
     unlabeled = set(categories)
-    print(unlabeled)
+    print("Current label set", unlabeled)
     for label in possible_labels:
-        unlabeled.remove(label)
+        if label in unlabeled:
+            unlabeled.remove(label)
 
     return unlabeled
 

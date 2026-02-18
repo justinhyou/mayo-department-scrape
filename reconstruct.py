@@ -12,6 +12,7 @@ possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other", "Skip"]
 def screen(categories):
     """ Given the set of categories, find any unmatched labels. """
     unlabeled = set(categories)
+    print("Current label set", unlabeled)
     for label in possible_labels:
         if label in unlabeled:
             unlabeled.remove(label)

@@ -10,15 +10,17 @@ possible_labels = ["Br", "Sp", "Peri", "Peds", "Vasc", "Other", "Skip"]
 
 
 def screen(categories):
+    """ Given the set of categories, find any unmatched labels. """
     unlabeled = set(categories)
-    print(unlabeled)
     for label in possible_labels:
-        unlabeled.remove(label)
+        if label in unlabeled:
+            unlabeled.remove(label)
 
     return unlabeled
 
 
 def regroup(df):
+    """ From input csv, group entries by category. """
     regrouped = defaultdict(list)
     for i, row in df.iterrows():
         if str(row['title']) != "nan":

@@ -12,6 +12,7 @@ import argparse
 
 from datetime import datetime
 
+# last dates: 2025-7-3 inclusive
 
 parser = argparse.ArgumentParser(
     description="Just an example",
@@ -87,6 +88,7 @@ def main():
 
         # find the result items div
         result_items_divs = soup.find_all("ol", class_="result-items")
+        print(result_items_divs)
         assert len(result_items_divs) == 1
         result_items = result_items_divs[0].find_all("li")
 
